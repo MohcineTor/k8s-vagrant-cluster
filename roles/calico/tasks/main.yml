@@ -1,0 +1,8 @@
+- name: Deploy Calico CNI network 
+  ansible.builtin.command:
+    kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  args:
+    creates: /etc/cni/net.d/calico-kubeconfig
+  when: inventory_hostname == groups['master'][0]

@@ -1,0 +1,11 @@
+- hosts: kube_cluster 
+  become: yes
+  roles:
+    - common
+    - containerd
+    - kubernetes
+
+- hosts: master
+  become: yes
+  roles:
+    - calico 

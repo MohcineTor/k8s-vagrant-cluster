@@ -1,0 +1,83 @@
+- name: Add kubernetes GPG key
+  ansible.builtin.get_url:
+    url: https://pkgs.k8s.io/core:/stable:/v{{ kube_version }}/deb/Release.key
+    dest: /etc/apt/keyrings/kubernetes-apt-keyring.asc
+    mode: '0644'
+    force: true
+
+- name: Add kubernetes repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.asc] https://pkgs.k8s.io/core:/stable:/v{{ kube_version }}/deb/ /"
+    state: present
+    update_cache: true
+
+- name: Install kubeadm, kubelet, kubectl 
+  ansible.builtin.apt:
+    name:
+      - kubelet={{ kube_version_full }}
+      - kubeadm={{ kube_version_full }}
+      - kubectl={{ kube_version_full }}
+    state: present
+    force_apt_get: yes
+    update_cache: yes
+
+- name: Hold kube packages at current version 
+  ansible.builtin.shell:
+    apt-mark showhold | grep -q "^{{ item }}$" || apt-mark hold {{ item }}
+  loop:
+    - kubeadm
+    - kubectl
+    - kubelet
+    
+- name: Enable and start kubelet service
+  ansible.builtin.systemd:
+    name: kubelet
+    enabled: yes
+    state: started
+
+- name: Initialize Kubernetes cluster (first master only)
+  ansible.builtin.command:
+    kubeadm init --apiserver-advertise-address={{ apiserver_ip }} --pod-network-cidr={{ pod_network_cidr }}
+  args:
+    creates: /etc/kubernetes/admin.conf
+  when: inventory_hostname == groups['master'][0]
+  register: kubeadm_init
+
+- name: Configure kubectl for vagrant user
+  ansible.builtin.file:
+    path: /home/vagrant/.kube
+    state: directory
+    owner: vagrant
+    group: vagrant
+    mode: '0700'
+  when: inventory_hostname == groups['master'][0]
+
+- name: Copy admin.conf for kubectl
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /home/vagrant/.kube/config
+    remote_src: yes
+    owner: vagrant
+    group: vagrant
+  when: inventory_hostname == groups['master'][0]
+
+- name: Generate join command on master 
+  ansible.builtin.command:
+    kubeadm token create --print-join-command 
+  register: join_command 
+  delegate_to: "{{ groups['master'][0] }}"
+  run_once: true
+
+- name: Set join command as fact for all  nodes
+  ansible.builtin.set_fact:
+    kube_join_command: "{{ join_command.stdout }}"
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['workers'] }}"
+  run_once: true
+
+- name: Join worker nodes to cluster 
+  ansible.builtin.command:
+    "{{ kube_join_command }}"
+  args:
+    creates: /etc/kubernetes/kubelet.conf
+  when: "'workers' in group_names"

@@ -1,0 +1,61 @@
+- name: Ensure /etc/apt/keyrings directory exists
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+
+- name: Add Docker GPG key 
+  ansible.builtin.apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+    
+- name: Add Docker repository 
+  ansible.builtin.apt_repository:
+    repo: "deb https://download.docker.com/linux/debian {{ ansible_lsb.codename }} stable"
+    state: present
+    filename: docker
+    update_cache: yes
+
+- name: Install containerd 
+  ansible.builtin.apt:
+    name: containerd.io
+    state: present
+    update_cache: yes
+
+- name: Generate default containerd config
+  ansible.builtin.command:
+    containerd config default
+  register: containerd_config
+
+- name: Write containerd config with SystemdCgroup enabled
+  copy:
+    dest: /etc/containerd/config.toml
+    content: "{{ containerd_config.stdout | regex_replace('SystemdCgroup = false', 'SystemdCgroup = true') }}"
+    owner: root
+    group: root
+    mode: '0644'
+    backup: yes
+  notify: restart containerd
+
+# - name: Deploy containerd config 
+#   template:
+#     src: config.toml.j2
+#     dest: /etc/containerd/config.toml
+#     owner: root 
+#     group: root 
+#     mode: '0644'
+#   notify: restart containerd
+
+- name: Copy crictl config
+  ansible.builtin.copy:
+    src: crictl.yaml
+    dest: /etc/crictl.yaml
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Enable and start containerd
+  ansible.builtin.systemd:
+    name: containerd
+    enabled: yes
+    state: started
