@@ -18,9 +18,11 @@
 
 - name: Install containerd 
   ansible.builtin.apt:
-    name: containerd.io
+    name: containerd.io=1.6.21-1
     state: present
     update_cache: yes
+    force: yes
+    allow_downgrade: yes
 
 - name: Generate default containerd config
   ansible.builtin.command:

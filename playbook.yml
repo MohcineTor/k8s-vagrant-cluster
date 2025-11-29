@@ -4,8 +4,4 @@
     - common
     - containerd
     - kubernetes
-
-- hosts: master
-  become: yes
-  roles:
     - calico 
